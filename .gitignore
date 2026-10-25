@@ -1,0 +1,6 @@
+# Local presentation files and sources — kept out of the repository
+decks/
+*.pdf
+
+# Personal presentation decks at the repository root
+script2-mastery.slide

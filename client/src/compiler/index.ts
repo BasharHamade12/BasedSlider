@@ -1,64 +1,44 @@
 import { Lexer } from './lexer';
 import { Parser } from './parser';
-import { interpret } from './interpreter';
-import { CompilerError, ProgramNode } from './ast';
-import { Slide } from '../store/presentation.types';
-import { Token } from './token';
+import { TokenType } from './token';
+import { hasErrors, normalizeDoc, validateDoc } from '../model/validate';
+import { CompileResult, Diagnostic } from '../model/types';
 
-export interface CompileResult {
-  slides: Slide[];
-  errors: CompilerError[];
-}
-
+/**
+ * source → tokens → document → normalized → validated.
+ * Returns the document only when there are no errors; warnings come along either way.
+ */
 export function compile(source: string): CompileResult {
-  const errors: CompilerError[] = [];
+  const tokens = new Lexer(source).tokenize();
 
-  // Phase 1: Lex
-  const lexer = new Lexer(source);
-  const tokens = lexer.tokenize();
-
-  const lexErrors = tokens
-    .filter((t) => t.type === 'UNKNOWN')
-    .map((t) => ({
-      line: t.line,
-      column: t.column,
-      message: `Unexpected character '${t.lexeme}'`,
+  const diagnostics: Diagnostic[] = tokens
+    .filter((token) => token.type === TokenType.UNKNOWN)
+    .map((token) => ({
       severity: 'error' as const,
       phase: 'lex' as const,
+      message: `Unexpected character '${token.lexeme}'`,
+      line: token.line,
+      column: token.column,
     }));
-  errors.push(...lexErrors);
 
-  if (errors.length > 0) return { slides: [], errors };
-
-  // Phase 2: Parse
   const parser = new Parser(tokens);
-  let ast: ProgramNode;
-  try {
-    ast = parser.parse();
-  } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : 'Parse error';
-    let lastToken: Token | undefined;
-    for (let i = tokens.length - 1; i >= 0; i--) {
-      if (tokens[i].type !== 'EOF') { lastToken = tokens[i]; break; }
-    }
-    lastToken ??= tokens[0];
-    errors.push({
-      line: lastToken?.line ?? 1,
-      column: lastToken?.column ?? 1,
-      message: msg,
-      severity: 'error',
-      phase: 'parse',
-    });
-    return { slides: [], errors };
-  }
+  const parsed = parser.parse();
+  diagnostics.push(...parser.errors);
 
-  if (parser.errors.length > 0) {
-    errors.push(...parser.errors);
-    return { slides: [], errors };
-  }
+  const normalized = normalizeDoc(parsed);
+  diagnostics.push(...normalized.diagnostics);
+  diagnostics.push(...validateDoc(normalized.doc));
 
-  // Phase 3: Interpret (AST → Slides)
-  const slides = interpret(ast);
+  const seen = new Set<string>();
+  const unique = diagnostics.filter((diagnostic) => {
+    const key = `${diagnostic.phase}:${diagnostic.line}:${diagnostic.column}:${diagnostic.message}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 
-  return { slides, errors };
+  return {
+    doc: hasErrors(unique) ? null : normalized.doc,
+    errors: unique,
+  };
 }
