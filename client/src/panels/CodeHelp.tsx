@@ -265,6 +265,7 @@ const CODE_HELP_SECTIONS: CodeHelpSection[] = [
             rows: [
               { name: 'content', accepts: 'quoted source, \\n between lines', fallback: '""' },
               { name: 'language', accepts: 'typescript · python · bash · json · sql · …', fallback: 'typescript' },
+              { name: 'showLanguage', accepts: 'true / false — hide the language name', fallback: 'true' },
               { name: 'theme', accepts: 'dark · light', fallback: 'dark' },
               { name: 'fontSize', accepts: 'number', fallback: '18' },
               { name: 'lineNumbers', accepts: 'true / false', fallback: 'true' },
@@ -274,7 +275,7 @@ const CODE_HELP_SECTIONS: CodeHelpSection[] = [
           },
         ],
         shared: GEOMETRY_SHARED,
-        keywords: ['code', 'snippet', 'syntax', 'programming', 'language', 'lineNumbers'],
+        keywords: ['code', 'snippet', 'syntax', 'programming', 'language', 'lineNumbers', 'showLanguage'],
       },
       {
         title: 'Image',

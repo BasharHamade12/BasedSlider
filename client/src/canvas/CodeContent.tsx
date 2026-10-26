@@ -34,6 +34,9 @@ export function CodeContent({ element }: { element: CodeElement }) {
   const clipId = `code-clip-${element.id.replace(/[^a-zA-Z0-9_-]/g, '')}`;
   const background = element.background;
   const foreground = element.color;
+  // Older saved decks predate the flag; treat a missing value as visible.
+  const showLanguage = element.showLanguage !== false && element.language !== '';
+  const codeTop = element.y + (showLanguage ? HEADER : PADDING);
 
   return (
     <g>
@@ -58,7 +61,7 @@ export function CodeContent({ element }: { element: CodeElement }) {
         stroke="rgba(255,255,255,0.12)"
         strokeWidth={1}
       />
-      {element.language && (
+      {showLanguage && (
         <text
           x={element.x + PADDING}
           y={element.y + 16}
@@ -78,7 +81,7 @@ export function CodeContent({ element }: { element: CodeElement }) {
                 <text
                   key={lineIndex}
                   x={element.x + PADDING + gutter}
-                  y={element.y + (element.language ? HEADER : PADDING) + lineIndex * lineHeight}
+                  y={codeTop + lineIndex * lineHeight}
                   fontSize={fontSize}
                   dominantBaseline="hanging"
                   xmlSpace="preserve"
@@ -101,7 +104,7 @@ export function CodeContent({ element }: { element: CodeElement }) {
             <text
               key={`gutter-${index}`}
               x={element.x + PADDING + (gutter - 10)}
-              y={element.y + (element.language ? HEADER : PADDING) + index * lineHeight}
+              y={codeTop + index * lineHeight}
               fontSize={fontSize * 0.8}
               fill="#6b7280"
               textAnchor="end"

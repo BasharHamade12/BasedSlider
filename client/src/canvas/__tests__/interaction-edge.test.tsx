@@ -114,4 +114,51 @@ describe('canvas interaction edge cases', () => {
       'Slide 1 slide canvas',
     );
   });
+
+  it('pinches with two touch pointers to zoom the canvas', () => {
+    render(<CanvasPanel />);
+    const svg = document.querySelector('svg[role="application"]')!;
+    const zoomBefore = useUiStore.getState().zoom;
+
+    fireEvent.pointerDown(svg, {
+      pointerType: 'touch',
+      pointerId: 11,
+      button: 0,
+      clientX: 400,
+      clientY: 300,
+    });
+    fireEvent.pointerDown(svg, {
+      pointerType: 'touch',
+      pointerId: 12,
+      button: 0,
+      clientX: 500,
+      clientY: 300,
+    });
+    // Spread the fingers apart: zoom must grow.
+    fireEvent.pointerMove(svg, { pointerType: 'touch', pointerId: 11, clientX: 300, clientY: 300 });
+    fireEvent.pointerMove(svg, { pointerType: 'touch', pointerId: 12, clientX: 700, clientY: 300 });
+    expect(useUiStore.getState().zoom).toBeGreaterThan(zoomBefore);
+    expect(useUiStore.getState().zoom).toBeLessThanOrEqual(4);
+
+    // One finger lifting ends the pinch cleanly; the rest must not throw.
+    fireEvent.pointerUp(svg, { pointerType: 'touch', pointerId: 11, clientX: 300, clientY: 300 });
+    fireEvent.pointerUp(svg, { pointerType: 'touch', pointerId: 12, clientX: 700, clientY: 300 });
+  });
+
+  it('two-finger drag after a pinch pans without changing zoom', () => {
+    render(<CanvasPanel />);
+    const svg = document.querySelector('svg[role="application"]')!;
+
+    fireEvent.pointerDown(svg, { pointerType: 'touch', pointerId: 21, button: 0, clientX: 300, clientY: 300 });
+    fireEvent.pointerDown(svg, { pointerType: 'touch', pointerId: 22, button: 0, clientX: 400, clientY: 300 });
+    const zoomBefore = useUiStore.getState().zoom;
+    const panBefore = useUiStore.getState().pan;
+    // Move both fingers the same distance: pure pan, no zoom.
+    fireEvent.pointerMove(svg, { pointerType: 'touch', pointerId: 21, clientX: 330, clientY: 340 });
+    fireEvent.pointerMove(svg, { pointerType: 'touch', pointerId: 22, clientX: 430, clientY: 340 });
+
+    expect(useUiStore.getState().zoom).toBe(zoomBefore);
+    expect(useUiStore.getState().pan.x).not.toBe(panBefore.x);
+    expect(useUiStore.getState().pan.y).not.toBe(panBefore.y);
+  });
 });

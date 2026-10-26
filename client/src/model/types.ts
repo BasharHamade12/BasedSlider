@@ -158,6 +158,8 @@ export interface CodeElement extends ElementBase {
   type: 'code';
   content: string;
   language: string;
+  /** Draw the language name in the block's header row. */
+  showLanguage: boolean;
   theme: 'dark' | 'light';
   fontSize: number;
   lineNumbers: boolean;

@@ -817,6 +817,63 @@ const PEN_TIP_PRESETS: Record<PenTip, { tool: Tool; opacity: number; minWidth?: 
 
 export type Theme = 'light' | 'dark';
 
+/** Drag limits for the resizable side panels, in CSS pixels. */
+export const PANEL_LIMITS = {
+  left: { min: 260, max: 640, default: 320 },
+  right: { min: 240, max: 640, default: 296 },
+} as const;
+
+export type PanelSide = keyof typeof PANEL_LIMITS;
+
+const PANEL_WIDTHS_KEY = 'slidecraft-panel-widths';
+
+/**
+ * A panel can never grow so wide that the canvas (and the opposite panel)
+ * lose their room, however narrow the window currently is.
+ */
+function clampPanelWidth(side: PanelSide, width: number, otherWidth: number): number {
+  const { min, max, default: fallback } = PANEL_LIMITS[side];
+  const requested = Number.isFinite(width) ? width : fallback;
+  const viewport = typeof window === 'undefined' ? Infinity : window.innerWidth;
+  const limit = Math.max(min, Math.min(max, viewport - otherWidth - 360));
+  return Math.round(Math.max(min, Math.min(limit, requested)));
+}
+
+function loadPanelWidths(): { left: number; right: number } {
+  const left = PANEL_LIMITS.left.default;
+  const right = PANEL_LIMITS.right.default;
+  if (typeof window === 'undefined') return { left, right };
+  try {
+    const raw = localStorage.getItem(PANEL_WIDTHS_KEY);
+    if (!raw) return { left, right };
+    const stored = JSON.parse(raw) as { left?: unknown; right?: unknown };
+    return {
+      left: clampPanelWidth('left', Number(stored.left), right),
+      right: clampPanelWidth('right', Number(stored.right), left),
+    };
+  } catch {
+    return { left, right };
+  }
+}
+
+let panelWidthSaveTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Debounced so dragging doesn't write localStorage on every pointer move. */
+function persistPanelWidths(): void {
+  if (typeof window === 'undefined') return;
+  if (panelWidthSaveTimer) clearTimeout(panelWidthSaveTimer);
+  panelWidthSaveTimer = setTimeout(() => {
+    const { leftWidth, rightWidth } = useUiStore.getState();
+    try {
+      localStorage.setItem(PANEL_WIDTHS_KEY, JSON.stringify({ left: leftWidth, right: rightWidth }));
+    } catch {
+      // Storage unavailable or full: sizes simply won't persist.
+    }
+  }, 250);
+}
+
+const initialPanelWidths = loadPanelWidths();
+
 interface UiState {
   activeSlideIndex: number;
   selectedIds: string[];
@@ -839,6 +896,8 @@ interface UiState {
   leftTab: 'code' | 'layers';
   leftCollapsed: boolean;
   rightCollapsed: boolean;
+  leftWidth: number;
+  rightWidth: number;
   railCollapsed: boolean;
   contextMenu: ContextMenuState | null;
   showConsole: boolean;
@@ -875,6 +934,8 @@ interface UiState {
   setLeftTab: (tab: 'code' | 'layers') => void;
   toggleLeftPanel: () => void;
   toggleRightPanel: () => void;
+  setLeftWidth: (width: number) => void;
+  setRightWidth: (width: number) => void;
   toggleRail: () => void;
   setContextMenu: (menu: ContextMenuState | null) => void;
   toggleConsole: () => void;
@@ -896,6 +957,12 @@ const getInitialTheme = (): Theme => {
   return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
 };
 
+/** On phone-sized viewports the side panels start collapsed so the canvas is usable. */
+const isNarrowScreen = (): boolean =>
+  typeof window !== 'undefined' &&
+  typeof window.matchMedia === 'function' &&
+  window.matchMedia('(max-width: 720px)').matches;
+
 export const useUiStore = create<UiState>((set, get) => ({
   activeSlideIndex: 0,
   selectedIds: [],
@@ -915,8 +982,10 @@ export const useUiStore = create<UiState>((set, get) => ({
   presentFrom: 0,
   pdfPrinting: false,
   leftTab: 'code',
-  leftCollapsed: false,
-  rightCollapsed: false,
+  leftCollapsed: isNarrowScreen(),
+  rightCollapsed: isNarrowScreen(),
+  leftWidth: initialPanelWidths.left,
+  rightWidth: initialPanelWidths.right,
   railCollapsed: false,
   contextMenu: null,
   showConsole: true,
@@ -974,6 +1043,14 @@ export const useUiStore = create<UiState>((set, get) => ({
   setLeftTab: (leftTab) => set({ leftTab }),
   toggleLeftPanel: () => set((state) => ({ leftCollapsed: !state.leftCollapsed })),
   toggleRightPanel: () => set((state) => ({ rightCollapsed: !state.rightCollapsed })),
+  setLeftWidth: (width) => {
+    set((state) => ({ leftWidth: clampPanelWidth('left', width, state.rightWidth) }));
+    persistPanelWidths();
+  },
+  setRightWidth: (width) => {
+    set((state) => ({ rightWidth: clampPanelWidth('right', width, state.leftWidth) }));
+    persistPanelWidths();
+  },
   toggleRail: () => set((state) => ({ railCollapsed: !state.railCollapsed })),
   setContextMenu: (contextMenu) => set({ contextMenu }),
   toggleConsole: () => set((state) => ({ showConsole: !state.showConsole })),

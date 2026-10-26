@@ -612,6 +612,11 @@ function CodeSection({ element }: { element: CodeElement }) {
         options={LANGUAGE_OPTIONS}
         onChange={(value) => updateElement(element.id, { language: value })}
       />
+      <ToggleField
+        label="Show language"
+        value={element.showLanguage !== false}
+        onChange={(value) => updateElement(element.id, { showLanguage: value })}
+      />
       <SelectField
         label="Theme"
         value={element.theme}

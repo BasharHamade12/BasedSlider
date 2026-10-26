@@ -92,6 +92,17 @@ describe('serialization edge cases', () => {
     expect(source).toContain('lineNumbers: false');
   });
 
+  it('serializes showLanguage only when the language label is hidden', () => {
+    const doc = createEmptyDoc();
+    doc.slides[0].elements = [createCode('e1', { x: 0, y: 0, width: 400, height: 200 })];
+    expect(serializeDoc(doc)).not.toContain('showLanguage');
+
+    doc.slides[0].elements = [
+      createCode('e1', { x: 0, y: 0, width: 400, height: 200 }, { showLanguage: false }),
+    ];
+    expect(serializeDoc(doc)).toContain('showLanguage: false');
+  });
+
   it('serializes image src and fit', () => {
     const doc = createEmptyDoc();
     doc.slides[0].elements = [

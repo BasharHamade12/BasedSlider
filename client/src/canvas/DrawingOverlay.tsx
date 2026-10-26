@@ -61,7 +61,14 @@ export function DrawingOverlay({ svgRef, scale }: DrawingOverlayProps) {
     const point = toSlide(event);
     drawingRef.current = true;
     setPoints([{ x: point.x, y: point.y, pressure: event.pressure || 0.5 }]);
-    event.currentTarget.setPointerCapture(event.pointerId);
+    // Capture keeps the stroke alive when the finger leaves the slide's
+    // draw area; it throws if the pointer already went away, which would
+    // otherwise abort this handler before the stroke even starts.
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      /* no active pointer id to capture */
+    }
     event.preventDefault();
   };
 

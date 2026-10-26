@@ -115,4 +115,20 @@ slide "Broken" {
       expect(code.content).toBe('line one\nline two\nline three');
     }
   });
+
+  it('reads showLanguage on code blocks and defaults it to visible', () => {
+    const source = compile(`slide "Code" {
+    code "e1" {
+        x: 0; y: 0; width: 400; height: 200;
+        showLanguage: false;
+    }
+    code "e2" {
+        x: 0; y: 240; width: 400; height: 200;
+    }
+}
+`);
+    const [hidden, shown] = source.doc!.slides[0].elements;
+    expect(hidden.type === 'code' && hidden.showLanguage).toBe(false);
+    expect(shown.type === 'code' && shown.showLanguage).toBe(true);
+  });
 });

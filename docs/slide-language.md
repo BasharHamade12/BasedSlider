@@ -164,6 +164,7 @@ code "e4" {
     x: 300; y: 300; width: 720; height: 260;
     content: "const hello = (name: string) => `Hello, ${name}`;";
     language: "typescript";
+    showLanguage: true;   // false hides the language name in the header
     theme: "dark";        // 'dark' | 'light'
     fontSize: 18;
     lineNumbers: true;

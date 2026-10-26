@@ -38,7 +38,9 @@ export function useCanvasSize(
     return () => observer.disconnect();
   }, [ref]);
 
-  const padding = 24;
+  // Tighter padding on narrow (phone-sized) viewports so the slide keeps
+  // every available pixel.
+  const padding = size.width > 0 && size.width < 720 ? 8 : 24;
   const availableW = Math.max(0, size.width - padding * 2);
   const availableH = Math.max(0, size.height - padding * 2);
   const fit =

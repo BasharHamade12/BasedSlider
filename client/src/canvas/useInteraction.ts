@@ -60,7 +60,15 @@ type Gesture =
   | { mode: 'marquee'; start: Point2; additive: boolean; base: string[] }
   | { mode: 'connect'; fromId: string; start: Point2 }
   | { mode: 'reattach'; connectorId: string; which: 'from' | 'to' }
-  | { mode: 'pan'; startClient: Point2; startPan: Point2 };
+  | { mode: 'pan'; startClient: Point2; startPan: Point2 }
+  | {
+      mode: 'pinch';
+      startDist: number;
+      startMid: Point2;
+      startZoom: number;
+      startPan: Point2;
+      center: Point2;
+    };
 
 function boundsOf(el: SlideElement): Rect | null {
   if (el.type === 'connector') return null;
@@ -121,8 +129,23 @@ function intersects(a: Rect, b: Rect): boolean {
   );
 }
 
+/**
+ * setPointerCapture throws NotFoundError when the pointer is already gone
+ * (a released touch) or synthetic. An exception there would abort the whole
+ * pointerdown handler mid-gesture, so swallow it — same as startResize does.
+ */
+function capturePointer(svg: SVGSVGElement, pointerId: number): void {
+  try {
+    svg.setPointerCapture(pointerId);
+  } catch {
+    /* no active pointer id to capture */
+  }
+}
+
 export function useInteraction(svgRef: RefObject<SVGSVGElement | null>, scale: number) {
   const gestureRef = useRef<Gesture>({ mode: 'idle' });
+  /** Active touch pointers on the canvas, for two-finger pinch zoom/pan. */
+  const pointersRef = useRef(new Map<number, Point2>());
   const spaceRef = useRef(false);
   const lastClickRef = useRef({ id: '', x: 0, y: 0, time: 0 });
   const [marquee, setMarquee] = useState<Rect | null>(null);
@@ -177,6 +200,7 @@ export function useInteraction(svgRef: RefObject<SVGSVGElement | null>, scale: n
       if (event.key === 'Escape' && gestureRef.current.mode !== 'idle') {
         useDocStore.getState().cancelTransaction();
         gestureRef.current = { mode: 'idle' };
+        pointersRef.current.clear();
         setMarquee(null);
         setPending(null);
         useUiStore.getState().setGuides({ v: [], h: [] });
@@ -207,6 +231,53 @@ export function useInteraction(svgRef: RefObject<SVGSVGElement | null>, scale: n
       const slide = doc.slides[ui.activeSlideIndex];
       const point = slidePoint(event);
 
+      // Multi-touch: the second finger turns any in-progress drag into a
+      // pinch gesture (zoom + two-finger pan around the fingers). Touches are
+      // ignored while the pen/highlighter is armed so a stray finger never
+      // breaks a stroke. Mice and single touches fall through unchanged.
+      if (
+        event.pointerType === 'touch' &&
+        ui.tool !== 'pen' &&
+        ui.tool !== 'highlighter'
+      ) {
+        pointersRef.current.set(event.pointerId, {
+          x: event.clientX,
+          y: event.clientY,
+        });
+        if (pointersRef.current.size === 2) {
+          const active = gestureRef.current;
+          if (
+            active.mode === 'move' ||
+            active.mode === 'resize' ||
+            active.mode === 'rotate'
+          ) {
+            // Keep whatever partial edit the first finger already applied.
+            useDocStore.getState().commitTransaction('Edit');
+            useUiStore.getState().setGuides({ v: [], h: [] });
+          }
+          setMarquee(null);
+          setPending(null);
+          const pts = [...pointersRef.current.values()];
+          const rect = svg.getBoundingClientRect();
+          gestureRef.current = {
+            mode: 'pinch',
+            startDist: Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y),
+            startMid: { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 },
+            startZoom: ui.zoom,
+            startPan: { ...ui.pan },
+            // Content scales about the stage centre, which sits at the svg's
+            // centre minus the current pan.
+            center: {
+              x: rect.left + rect.width / 2 - ui.pan.x,
+              y: rect.top + rect.height / 2 - ui.pan.y,
+            },
+          };
+          capturePointer(svg, event.pointerId);
+          event.preventDefault();
+          return;
+        }
+      }
+
       if (event.button === 1 || spaceRef.current) {
         useUiStore.getState().setContextMenu(null);
         gestureRef.current = {
@@ -214,7 +285,7 @@ export function useInteraction(svgRef: RefObject<SVGSVGElement | null>, scale: n
           startClient: { x: event.clientX, y: event.clientY },
           startPan: { ...ui.pan },
         };
-        svg.setPointerCapture(event.pointerId);
+        capturePointer(svg, event.pointerId);
         event.preventDefault();
         return;
       }
@@ -241,7 +312,7 @@ export function useInteraction(svgRef: RefObject<SVGSVGElement | null>, scale: n
             which: handle === 'connector-from' ? 'from' : 'to',
           };
           setPending({ fromId: el.id, x1: other.x, y1: other.y, x2: point.x, y2: point.y });
-          svg.setPointerCapture(event.pointerId);
+          capturePointer(svg, event.pointerId);
           event.preventDefault();
           return;
         }
@@ -266,7 +337,7 @@ export function useInteraction(svgRef: RefObject<SVGSVGElement | null>, scale: n
             initial: { x: el.x, y: el.y, width: el.width, height: el.height },
           };
         }
-        svg.setPointerCapture(event.pointerId);
+        capturePointer(svg, event.pointerId);
         event.preventDefault();
         return;
       }
@@ -280,7 +351,7 @@ export function useInteraction(svgRef: RefObject<SVGSVGElement | null>, scale: n
         if (!el || el.type === 'connector') return;
         gestureRef.current = { mode: 'connect', fromId: id, start: point };
         setPending({ fromId: id, x1: point.x, y1: point.y, x2: point.x, y2: point.y });
-        svg.setPointerCapture(event.pointerId);
+        capturePointer(svg, event.pointerId);
         event.preventDefault();
         return;
       }
@@ -303,10 +374,13 @@ export function useInteraction(svgRef: RefObject<SVGSVGElement | null>, scale: n
         // the native dblclick event. Detect a double press here instead.
         const now = performance.now();
         const last = lastClickRef.current;
+        // Fingers land sloppier than a mouse pointer: widen the double-press
+        // radius (in slide units) so double-tap-to-edit works on touch.
+        const slop = event.pointerType === 'touch' ? 24 / Math.max(scale, 0.01) : 8;
         const isDouble =
           last.id === id &&
           now - last.time < 400 &&
-          Math.hypot(point.x - last.x, point.y - last.y) < 8;
+          Math.hypot(point.x - last.x, point.y - last.y) < slop;
         lastClickRef.current = { id, x: point.x, y: point.y, time: now };
         if (isDouble) {
           startTextEditing(id);
@@ -349,7 +423,7 @@ export function useInteraction(svgRef: RefObject<SVGSVGElement | null>, scale: n
           snapX: targets.x,
           snapY: targets.y,
         };
-        svg.setPointerCapture(event.pointerId);
+        capturePointer(svg, event.pointerId);
         event.preventDefault();
         return;
       }
@@ -361,15 +435,49 @@ export function useInteraction(svgRef: RefObject<SVGSVGElement | null>, scale: n
         additive: event.shiftKey,
         base: useUiStore.getState().selectedIds,
       };
-      setMarquee({ x: point.x, y: point.y, width: 0, height: 0 });
-      svg.setPointerCapture(event.pointerId);
+      setMarquee({ x: point.x, y: point.y, width: 0, height: 0 });          capturePointer(svg, event.pointerId);
     },
     [slidePoint, startTextEditing, svgRef],
   );
 
+  /** Zoom + pan two fingers apart/together, keeping content under them. */
+  const updatePinch = useCallback((gesture: Extract<Gesture, { mode: 'pinch' }>) => {
+    const pts = [...pointersRef.current.values()];
+    if (pts.length < 2 || gesture.startDist < 1) return;
+    const mid = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+    const dist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+    const zoom = Math.max(
+      0.1,
+      Math.min(4, (gesture.startZoom * dist) / gesture.startDist),
+    );
+    const ratio = zoom / gesture.startZoom;
+    const ui = useUiStore.getState();
+    ui.setZoom(zoom);
+    ui.setPan({
+      x:
+        mid.x -
+        gesture.center.x -
+        (gesture.startMid.x - gesture.center.x - gesture.startPan.x) * ratio,
+      y:
+        mid.y -
+        gesture.center.y -
+        (gesture.startMid.y - gesture.center.y - gesture.startPan.y) * ratio,
+    });
+  }, []);
+
   const onPointerMove = useCallback(
     (event: React.PointerEvent<SVGSVGElement>) => {
       const gesture = gestureRef.current;
+      if (pointersRef.current.has(event.pointerId)) {
+        pointersRef.current.set(event.pointerId, {
+          x: event.clientX,
+          y: event.clientY,
+        });
+      }
+      if (gesture.mode === 'pinch') {
+        updatePinch(gesture);
+        return;
+      }
       if (gesture.mode === 'idle') return;
       const point = slidePoint(event);
 
@@ -510,7 +618,7 @@ export function useInteraction(svgRef: RefObject<SVGSVGElement | null>, scale: n
         }
       }
     },
-    [scale, slidePoint],
+    [scale, slidePoint, updatePinch],
   );
 
   const onPointerUp = useCallback(
@@ -518,6 +626,17 @@ export function useInteraction(svgRef: RefObject<SVGSVGElement | null>, scale: n
       const gesture = gestureRef.current;
       const svg = svgRef.current;
       const ui = useUiStore.getState();
+
+      pointersRef.current.delete(event.pointerId);
+      if (gesture.mode === 'pinch') {
+        // A finger lifted: stop zooming so the remaining finger does not
+        // suddenly start dragging whatever is under it.
+        if (pointersRef.current.size < 2) gestureRef.current = { mode: 'idle' };
+        if (svg?.hasPointerCapture(event.pointerId)) {
+          svg.releasePointerCapture(event.pointerId);
+        }
+        return;
+      }
 
       if (gesture.mode === 'move' || gesture.mode === 'resize' || gesture.mode === 'rotate') {
         useDocStore.getState().commitTransaction('Edit');
@@ -613,15 +732,23 @@ export function useInteraction(svgRef: RefObject<SVGSVGElement | null>, scale: n
     [marquee, slidePoint, svgRef],
   );
 
-  const onPointerCancel = useCallback(() => {
-    if (gestureRef.current.mode !== 'idle') {
-      useDocStore.getState().cancelTransaction();
-      gestureRef.current = { mode: 'idle' };
-      setMarquee(null);
-      setPending(null);
-      useUiStore.getState().setGuides({ v: [], h: [] });
-    }
-  }, []);
+  const onPointerCancel = useCallback(
+    (event: React.PointerEvent<SVGSVGElement>) => {
+      pointersRef.current.delete(event.pointerId);
+      if (gestureRef.current.mode === 'pinch') {
+        if (pointersRef.current.size < 2) gestureRef.current = { mode: 'idle' };
+        return;
+      }
+      if (gestureRef.current.mode !== 'idle') {
+        useDocStore.getState().cancelTransaction();
+        gestureRef.current = { mode: 'idle' };
+        setMarquee(null);
+        setPending(null);
+        useUiStore.getState().setGuides({ v: [], h: [] });
+      }
+    },
+    [],
+  );
 
   const onDoubleClick = useCallback(
     (event: React.MouseEvent<SVGSVGElement>) => {

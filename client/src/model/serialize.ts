@@ -179,6 +179,7 @@ function serializeCode(el: CodeElement, depth: number): string[] {
   lines.push(...geometryLines(el, body), ...baseLines(el, body));
   lines.push(prop(body, 'content', el.content));
   if (el.language !== 'typescript') lines.push(prop(body, 'language', el.language));
+  if (!el.showLanguage) lines.push(prop(body, 'showLanguage', false));
   if (el.theme !== 'dark') lines.push(prop(body, 'theme', el.theme));
   if (el.fontSize !== 18) lines.push(prop(body, 'fontSize', el.fontSize));
   if (!el.lineNumbers) lines.push(prop(body, 'lineNumbers', false));

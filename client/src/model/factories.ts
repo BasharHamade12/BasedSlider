@@ -150,6 +150,7 @@ export function createCode(
     type: 'code',
     content: 'const hello = (name: string) => `Hello, ${name}`;',
     language: 'typescript',
+    showLanguage: true,
     theme: 'dark',
     fontSize: 18,
     lineNumbers: true,

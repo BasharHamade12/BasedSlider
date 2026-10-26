@@ -33,7 +33,13 @@ export function SelectionOverlay({ scale, marquee, pending }: SelectionOverlayPr
   const slide = doc.slides[activeSlideIndex];
   const elements = slide?.elements ?? [];
   const selected = elements.filter((el) => selectedIds.includes(el.id));
-  const handleSize = 8 / Math.max(scale, 0.01);
+  // Fingers need bigger grab targets than a mouse pointer.
+  const coarse =
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(pointer: coarse)').matches;
+  const handleSize = (coarse ? 15 : 8) / Math.max(scale, 0.01);
+  const endpointRadius = (coarse ? 9 : 6) / Math.max(scale, 0.01);
   const line = 1.5 / Math.max(scale, 0.01);
 
   return (
@@ -59,7 +65,7 @@ export function SelectionOverlay({ scale, marquee, pending }: SelectionOverlayPr
                 data-element-id={el.id}
                 cx={resolved.start.x}
                 cy={resolved.start.y}
-                r={6 / scale}
+                r={endpointRadius}
                 fill="#ffffff"
                 stroke="#0a7"
                 strokeWidth={line}
@@ -71,7 +77,7 @@ export function SelectionOverlay({ scale, marquee, pending }: SelectionOverlayPr
                 data-element-id={el.id}
                 cx={resolved.end.x}
                 cy={resolved.end.y}
-                r={6 / scale}
+                r={endpointRadius}
                 fill="#ffffff"
                 stroke="#0a7"
                 strokeWidth={line}

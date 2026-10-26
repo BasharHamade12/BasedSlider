@@ -84,6 +84,15 @@ body,
 
 button {
   font-family: inherit;
+  /* Suppress double-tap zoom on controls; pan/pinch still work. */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.slide-thumb,
+.layer-row {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 button:focus-visible,
@@ -125,6 +134,9 @@ textarea {
   flex-direction: column;
   width: 100%;
   height: 100vh;
+  /* dvh keeps the console and canvas inside the visible area when a mobile
+     browser's URL bar collapses or expands. */
+  height: 100dvh;
   overflow: hidden;
   background: var(--bg);
 }
@@ -174,6 +186,55 @@ textarea {
 .left-panel.collapsed,
 .right-panel.collapsed {
   display: none;
+}
+
+/* ─── panel resize handles ─── */
+
+/* Straddles the panel border; dragging it sets --left/right-panel-width on
+   .app-body, which the panels and these handles both read. */
+.panel-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 11px;
+  transform: translateX(-50%);
+  z-index: 25;
+  cursor: col-resize;
+  touch-action: none;
+  outline: none;
+}
+
+.panel-resizer-left {
+  left: var(--left-panel-width, 320px);
+}
+
+.panel-resizer-right {
+  left: calc(100% - var(--right-panel-width, 296px));
+}
+
+.panel-resizer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  transform: translateX(-50%);
+  background: transparent;
+  transition: background 0.15s, width 0.15s;
+}
+
+.panel-resizer:hover::after,
+.panel-resizer:focus-visible::after,
+body.resizing-panels .panel-resizer::after {
+  width: 2px;
+  background: var(--accent);
+}
+
+/* While dragging, keep the resize cursor and stop text from being selected. */
+body.resizing-panels {
+  cursor: col-resize;
+  user-select: none;
 }
 
 /* ─── toolbar ─── */
@@ -562,9 +623,8 @@ textarea {
 .left-panel {
   display: flex;
   flex-direction: column;
-  width: 320px;
+  width: var(--left-panel-width, 320px);
   min-width: 260px;
-  max-width: 420px;
   border-right: 1px solid var(--border);
   background: var(--surface);
   min-height: 0;
@@ -1467,7 +1527,7 @@ textarea {
 /* ─── right panel / inspector ─── */
 
 .right-panel {
-  width: 296px;
+  width: var(--right-panel-width, 296px);
   flex-shrink: 0;
   border-left: 1px solid var(--border);
   background: var(--surface);
@@ -2309,13 +2369,6 @@ textarea {
 /* ─── responsive ─── */
 
 @media (max-width: 1280px) {
-  .right-panel {
-    width: 272px;
-  }
-  .left-panel {
-    width: 292px;
-    min-width: 240px;
-  }
   .field-label {
     width: 64px;
   }
@@ -2327,24 +2380,21 @@ textarea {
   }
 
   .left-panel {
-    width: 260px;
     min-width: 0;
-  }
-
-  .right-panel {
-    width: 240px;
   }
 }
 
 @media (max-width: 720px) {
-  .top-toolbar {
-    overflow-x: auto;
-    overflow-y: hidden;
-    scrollbar-width: none;
+  /* Panels overlay the canvas here, so there is no split to drag. */
+  .panel-resizer {
+    display: none;
   }
 
-  .top-toolbar::-webkit-scrollbar {
-    display: none;
+  /* Wrap instead of scrolling: an overflow-scrolled toolbar clips its own
+     dropdown menus (shapes, pen, export) once they open below the bar. */
+  .top-toolbar {
+    flex-wrap: wrap;
+    row-gap: 4px;
   }
 
   .slide-rail {
@@ -2404,6 +2454,68 @@ textarea {
 
   .canvas-check {
     gap: 2px;
+  }
+}
+
+/* ─── touch devices ─── */
+
+@media (pointer: coarse) {
+  /* Comfortable finger targets. */
+  .toolbar-icon-btn {
+    width: 40px;
+    height: 40px;
+  }
+
+  .toolbar-text-btn,
+  .toolbar-primary-btn {
+    height: 40px;
+  }
+
+  .top-toolbar {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+
+  .icon-btn {
+    width: 32px;
+    height: 32px;
+  }
+
+  .nav-btn {
+    width: 44px;
+    height: 40px;
+  }
+
+  .canvas-resize-handle {
+    width: 26px;
+    height: 26px;
+    right: -13px;
+    bottom: -13px;
+  }
+
+  .panel-restore {
+    width: 28px;
+  }
+
+  .panel-tabs .panel-collapse {
+    flex-basis: 40px;
+  }
+
+  /* iOS Safari zooms any focused field under 16px; size controls up so the
+     page never jumps away from the app shell. */
+  .field-input,
+  .field-textarea,
+  .code-help-search input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+@media (max-width: 560px) {
+  /* The tool hint is nice-to-have; the zoom controls need the room. */
+  .canvas-tool-hint {
+    display: none;
   }
 }
 
